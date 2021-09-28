@@ -1,7 +1,10 @@
+import sys 
 import argparse
+from typing_extensions import final
 from tqdm import tqdm
 import numpy as np
 
+import torchvision
 import torch
 import torch.nn as nn
 import torch.optim
@@ -19,7 +22,8 @@ def eval(tree: ProtoTree,
         log: Log = None,  
         sampling_strategy: str = 'distributed',
         log_prefix: str = 'log_eval_epochs', 
-        progress_prefix: str = 'Eval Epoch'
+        progress_prefix: str = 'Eval Epoch',
+        final_eval: bool = True
         ) -> dict:
     tree = tree.to(device)
 
@@ -39,12 +43,34 @@ def eval(tree: ProtoTree,
                         desc=progress_prefix+' %s'%epoch,
                         ncols=0)
 
+    kwargs = {"final_eval":final_eval}
+
+    allNorm,allAtt = None,None
+
     # Iterate through the test set
     for i, (xs, ys) in test_iter:
         xs, ys = xs.to(device), ys.to(device)
 
         # Use the model to classify this batch of input data
-        out, test_info = tree.forward(xs, sampling_strategy)
+        ret = tree.forward(xs, sampling_strategy,**kwargs)
+        if final_eval:
+            out,test_info,features,similarities,distances = ret
+
+            attMaps = []
+            mapsToKeep = torch.topk(similarities,k=3,dim=1)[1]
+            sim_2d = torch.exp(-distances)
+            for j in range(len(similarities)):
+                attMaps.append(sim_2d[j][mapsToKeep[j]].unsqueeze(0))
+            attMaps = torch.cat(attMaps,dim=0)
+
+            norm = torch.sqrt(torch.pow(features,2).sum(dim=1,keepdim=True))
+
+            allNorm = catMap(allNorm,norm)
+            allAtt = catMap(allAtt,attMaps)
+
+        else:
+            out, test_info = ret
+
         ys_pred = torch.argmax(out, dim=1)
 
         # Update the confusion matrix
@@ -64,10 +90,28 @@ def eval(tree: ProtoTree,
         del ys_pred
         del test_info
 
+    if final_eval:
+        np.save("./results/norm_modelprototree_epoch{}_test.npy".format(epoch),allNorm.numpy())
+        np.save("./results/attMaps_modelprototree_epoch{}_test.npy".format(epoch),allAtt.numpy())
+
     info['confusion_matrix'] = cm
     info['test_accuracy'] = acc_from_cm(cm)
     log.log_message("\nEpoch %s - Test accuracy with %s routing: "%(epoch, sampling_strategy)+str(info['test_accuracy']))
     return info
+
+def catMap(fullMap,map):
+
+    #In case attention weights are not comprised between 0 and 1
+    tens_min = map.min(dim=-1,keepdim=True)[0].min(dim=-2,keepdim=True)[0].min(dim=-3,keepdim=True)[0]
+    tens_max = map.max(dim=-1,keepdim=True)[0].max(dim=-2,keepdim=True)[0].max(dim=-3,keepdim=True)[0]
+    map = (map-tens_min)/(tens_max-tens_min)
+
+    if fullMap is None:
+        fullMap = (map.cpu()*255).byte()
+    else:
+        fullMap = torch.cat((fullMap,(map.cpu()*255).byte()),dim=0)
+
+    return fullMap
 
 @torch.no_grad()
 def eval_fidelity(tree: ProtoTree,
