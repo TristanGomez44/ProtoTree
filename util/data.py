@@ -25,6 +25,8 @@ def get_data(args: argparse.Namespace):
         return get_birds(True, './data/CUB_200_2011/dataset/train_corners', './data/CUB_200_2011/dataset/train_crop', './data/CUB_200_2011/dataset/test_full')
     if args.dataset == 'CARS':
         return get_cars(True, './data/cars/dataset/train', './data/cars/dataset/train', './data/cars/dataset/test')
+    if args.dataset == "AIRCRAFT":
+        return get_aircraft(True, './data/aircraft/dataset/train', './data/aircraft/dataset/train', './data/aircraft/dataset/test')
     raise Exception(f'Could not load data set "{args.dataset}"!')
 
 def get_dataloaders(args: argparse.Namespace):
@@ -89,6 +91,37 @@ def get_birds(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_
         classes[i]=classes[i].split('.')[1]
     return trainset, projectset, testset, classes, shape
 
+def get_aircraft(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size = 224): 
+    shape = (3, img_size, img_size)
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    normalize = transforms.Normalize(mean=mean,std=std)
+    transform_no_augment = transforms.Compose([
+                            transforms.Resize(size=(img_size, img_size)),
+                            transforms.ToTensor(),
+                            normalize
+                        ])
+    if augment:
+        transform = transforms.Compose([
+            transforms.Resize(size=(img_size, img_size)),
+            transforms.RandomOrder([
+            transforms.RandomPerspective(distortion_scale=0.2, p = 0.5),
+            transforms.ColorJitter((0.6,1.4), (0.6,1.4), (0.6,1.4), (-0.02,0.02)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomAffine(degrees=10, shear=(-2,2),translate=[0.05,0.05]),
+            ]),
+            transforms.ToTensor(),
+            normalize,
+        ])
+    else:
+        transform = transform_no_augment
+
+    trainset = torchvision.datasets.ImageFolder(train_dir, transform=transform)
+    projectset = torchvision.datasets.ImageFolder(project_dir, transform=transform_no_augment)
+    testset = torchvision.datasets.ImageFolder(test_dir, transform=transform_no_augment)
+    classes = trainset.classes
+
+    return trainset, projectset, testset, classes, shape
 
 def get_cars(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size = 224): 
     shape = (3, img_size, img_size)
