@@ -79,8 +79,6 @@ def run_tree(args=None):
                 train_info = train_epoch_kontschieder(tree, trainloader, optimizer, epoch, args.disable_derivative_free_leaf_optim, device, log, log_prefix)
             else:
                 train_info = train_epoch(tree, trainloader, optimizer, epoch, args.disable_derivative_free_leaf_optim, device, log, log_prefix)
-            save_tree(tree, optimizer, scheduler, epoch, log, args)
-            best_train_acc = save_best_train_tree(tree, optimizer, scheduler, best_train_acc, train_info['train_accuracy'], log)
             leaf_labels = analyse_leafs(tree, epoch, len(classes), leaf_labels, args.pruning_threshold_leaves, log)
             
             # Evaluate tree
@@ -122,7 +120,6 @@ def run_tree(args=None):
     '''
     pruned = prune(tree, args.pruning_threshold_leaves, log)
     name = "pruned"
-    save_tree_description(tree, optimizer, scheduler, name, log)
     pruned_tree = deepcopy(tree)
     # Analyse and evaluate pruned tree
     leaf_labels = analyse_leafs(tree, epoch+2, len(classes), leaf_labels, args.pruning_threshold_leaves, log)
@@ -154,11 +151,8 @@ def run_tree(args=None):
     # Upsample prototype for visualization
     project_info = upsample(tree, project_info, projectloader, name, args, log)
     # visualize tree
-    gen_vis(tree, name, args, classes)
 
-    
     return trained_tree.to('cpu'), pruned_tree.to('cpu'), pruned_projected_tree.to('cpu'), original_test_acc, pruned_test_acc, pruned_projected_test_acc, project_info, eval_info_samplemax, eval_info_greedy, fidelity_info
-
 
 if __name__ == '__main__':
     args = get_args()
